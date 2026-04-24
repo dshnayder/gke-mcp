@@ -41,14 +41,14 @@ Translate the settings into the GKE `ComputeClass` CRD structure.
 
 | Karpenter `NodePool` / `EC2NodeClass` Field | GKE ComputeClass Equivalent (`spec`) | Notes |
 | :--- | :--- | :--- |
-| `NodePool.spec.template.spec.requirements` (Instance Type, Size, Family, Arch) | `priorities[]` array: `machineFamily`, `minCores`, `minMemoryGb`, `arch` (e.g., `X86_64`, `ARM64`). | Define multiple `priorities` entries to simulate fallbacks. Assign `priorityScore` values (GKE 1.35+) or rely on array order. |
+| `NodePool.spec.template.spec.requirements` (Instance Type, Size, Family) | `priorities[]` array: `machineFamily`, `minCores`, `minMemoryGb`. | Define multiple `priorities` entries to simulate fallbacks. Rely on array order for preference. |
 | `NodePool.spec.template.spec.requirements` (`karpenter.sh/capacity-type`: `spot` / `on-demand`) | `priorities[].spot`: `true` or `false` | List Spot options with higher priority for cost optimization. |
 | `NodePool.spec.template.spec.requirements` (`topology.kubernetes.io/zone`) | `priorities[].location.zones` | Specify allowed GCP zones. GKE 1.33+ |
 | `NodePool.spec.template.metadata.labels` | `nodePoolConfig.nodeLabels` (global) or `priorities[].nodeLabels` (specific) | Labels applied to nodes. Priority-level labels require GKE 1.34+ |
 | `NodePool.spec.template.spec.taints` | `nodePoolConfig.taints` (global) or `priorities[].taints` (specific) | Taints applied to nodes. Priority-level taints require GKE 1.34+ |
 | `NodePool.spec.template.spec.startupTaints` | No direct equivalent. Use `taints`. | GKE's model doesn't explicitly distinguish startup taints in CCC. |
 | `EC2NodeClass.spec.role` / `instanceProfile` | `nodePoolConfig.serviceAccount` | Map AWS IAM Role to GCP Service Account. |
-| `EC2NodeClass.spec.amiFamily` / `amiSelectorTerms` | `nodePoolConfig.imageType` (e.g., `COS_CONTAINERD`, `UBUNTU_CONTAINERD`) | GKE uses managed images. Use `nodePoolConfig.imageStreaming` for faster startups. |
+| `EC2NodeClass.spec.amiFamily` / `amiSelectorTerms` | `nodePoolConfig.imageType` (e.g., `cos_containerd`, `ubuntu_containerd`) | GKE uses managed images. Use `nodePoolConfig.imageStreaming` for faster startups. |
 | `EC2NodeClass.spec.blockDeviceMappings` | `priorities[].storage` (`bootDiskSize`, `bootDiskType`, `localSSDCount`) | GKE supports boot disk customization and Local SSDs in CCC. Secondary disks map to `secondaryBootDisks`. |
 | `EC2NodeClass.spec.userData` | `nodePoolConfig.nodeSystemConfig.linuxNodeConfig.sysctls` | Map kernel tunings to `sysctls`. Other logic should move to DaemonSets. |
 | `EC2NodeClass.spec.securityGroupSelectorTerms` | VPC Firewall Rules & Network Policies. | Network-level mapping. |
@@ -57,7 +57,6 @@ Translate the settings into the GKE `ComputeClass` CRD structure.
 | `NodePool.spec.disruption.consolidationPolicy` | `autoscalingPolicy.consolidationThreshold` | Tunes GKE's node consolidation behavior. |
 | `NodePool.spec.disruption.expireAfter` | `priorities[].maxRunDurationSeconds` | Map node TTL to max run duration. GKE 1.32+ |
 | `EC2NodeClass.spec.kubelet` | `nodePoolConfig.nodeSystemConfig.kubeletConfig` | Map Kubelet args like `cpuCfsQuota`, `podPidsLimit`. |
-| `NodePool.spec.weight` | `priorities[].priorityScore` | Explicitly rank priorities. GKE 1.35+ |
 | `Requirements` (GPU types) | `priorities[].gpu` (type, count) or `priorities[].tpu` | Direct accelerator mapping including GPU sharing (MPS/Time-sharing). |
 | `Topology` (Compact Placement) | `priorities[].placement.policyName` | Map cluster-placement constraints to GCP Resource Policies. GKE 1.33+ |
 
@@ -92,7 +91,7 @@ spec:
     # gpuConsolidationThreshold: 100
 
   nodePoolConfig:
-    imageType: COS_CONTAINERD
+    imageType: cos_containerd
     serviceAccount: <SA>@<PROJECT>.iam.gserviceaccount.com
     nodeLabels:
       migrated-from: karpenter
@@ -101,8 +100,7 @@ spec:
 
   priorities:
     # Priority 1: Spot N4 with local SSDs
-    - priorityScore: 100
-      machineFamily: n4
+    - machineFamily: n4
       spot: true
       storage:
         bootDiskSize: 100
@@ -116,22 +114,19 @@ spec:
             net.core.somaxconn: 2048
 
     # Priority 2: On-demand N4 (Fallback)
-    - priorityScore: 90
-      machineFamily: n4
+    - machineFamily: n4
       spot: false
       storage:
         bootDiskSize: 100
 
     # Priority 3: GPU Fallback (if applicable)
-    # - priorityScore: 80
-    #   gpu:
+    # - gpu:
     #     type: nvidia-l4
     #     count: 1
     #     driverVersion: default
 
     # Priority 4: Specified Location
-    # - priorityScore: 70
-    #   machineFamily: e2
+    # - machineFamily: e2
     #   location:
     #     zones: ["us-central1-a"]
 ```
