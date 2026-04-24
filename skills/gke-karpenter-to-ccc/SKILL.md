@@ -1,5 +1,5 @@
 ---
-name: karpenter-to-ccc
+name: gke-karpenter-to-ccc
 description: Translates AWS EKS Karpenter NodePool and EC2NodeClass CRDs to GKE Custom Compute Class (CCC) configurations. You MUST use this skill whenever a user mentions migrating node provisioning from AWS/Karpenter to GKE, or provides Karpenter YAMLs and asks for GKE equivalents. This skill ensures complex mappings like Spot fallbacks, accelerator configurations, and system tunings are correctly handled.
 ---
 
