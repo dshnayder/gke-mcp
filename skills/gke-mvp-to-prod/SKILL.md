@@ -1,5 +1,5 @@
 ---
-name: mvp-to-prod
+name: gke-mvp-to-prod
 description: 'Standardized workflow for promoting applications from MVP to production-grade deployments on GKE. Use when: (1) Designing multi-environment GKE architectures, (2) Implementing PR-based rollout gates, or (3) Configuring environment-specific parameters via Kustomize overlays.'
 ---
 
