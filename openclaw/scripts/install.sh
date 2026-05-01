@@ -41,6 +41,7 @@ echo "========================================================================"
 echo ""
 
 TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
 REPO_TARBALL="$TMP_DIR/repo.tar.gz"
 REPO_NAME="gke-mcp-main"
 
@@ -93,10 +94,10 @@ if [ "$SKIP_MCP" -eq 0 ]; then
     fi
   fi
 else
-  echo "--- Phase 1: Skipped (gcloud not configured) ---"
+  echo "--- Phase 1: Skipped (Upcoming Feature) ---"
   echo "    The 'gke-mcp' binary provides the core capability for agents to read"
   echo "    cluster states, inspect resources, and view logs. This functionality"
-  echo "    will be unavailable."
+  echo "    will be unavailable in this release."
 fi
 
 # --- Phase 2: Register Agents in OpenClaw ---
@@ -107,6 +108,7 @@ AGENTS=()
 # Discover agents
 if [ -d "$TMP_DIR/agents" ]; then
   for AGENT_DIR in "$TMP_DIR/agents"/*; do
+    [ -e "$AGENT_DIR" ] || continue
     if [ -d "$AGENT_DIR" ]; then
       AGENT_NAME=$(basename "$AGENT_DIR")
       AGENTS+=("$AGENT_NAME")
@@ -176,15 +178,13 @@ if [ "$SKIP_MCP" -eq 0 ]; then
     fi
   fi
 else
-  echo "--- Phase 3: Skipped (gcloud not configured) ---"
-  echo "    The OpenClaw gateway will not bridge the GKE MCP tools to your agents."
-  echo "    To enable real-time cluster operations later, authenticate with gcloud"
-  echo "    and re-run this installation script."
+  echo "--- Phase 3: Skipped (Upcoming Feature) ---"
+  echo "    The OpenClaw gateway will not bridge the GKE MCP tools to your agents yet."
 fi
 
 # --- Phase 4: Configure Semantic Routing ---
 echo "--- Phase 4: Configuring Semantic Routing ---"
-if [ ${#AGENTS[@]} -gt 0 ]; then
+if [ ${#AGENTS[@]} -gt 1 ]; then
   # Get the current allowAgents array (defaulting to empty array if not set)
   CURRENT_ALLOW_AGENTS=$(openclaw config get agents.defaults.subagents.allowAgents 2>/dev/null || echo "[]")
 
