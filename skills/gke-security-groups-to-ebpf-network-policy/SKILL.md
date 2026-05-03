@@ -7,79 +7,54 @@ description: Guides the translation of AWS EKS Security Groups (infrastructure-l
 
 ### 1. The Security Paradigm Shift
 
-*   **AWS Security Groups (EKS):** Often manage security at the ENI (Network Interface) level. Even when using "Security Groups for Pods," you are still dealing with AWS-native firewall rules that are stateful and often IP-based or SG-ID-based.
-*   **GKE Dataplane V2 (GKE):** Security is decoupled from the VPC infrastructure. Rules are enforced directly in the Linux kernel using **eBPF (Cilium)**. This allows for high-performance, identity-aware (label-based) filtering that is highly scalable and provides deep observability.
+*   **AWS Security Groups (EKS):** Operate at the instance (EC2) or Elastic Network Interface (ENI) level. They are stateful firewalls. When used with EKS:
+    *   **Node-Level SG:** Applied to the worker nodes, affecting all pods on those nodes for traffic leaving/entering the node.
+    *   **Security Groups for Pods:** Allows associating specific SGs directly to Pods or Deployments, often using the `SecurityGroupPolicy` Custom Resource Definition (CRD). This provides more granular, Pod-specific rules.
+    *   Rules are often based on IP CIDRs, Port/Protocol, or references to other SG IDs.
+
+*   **GKE Dataplane V2 (GKE):** Security is enforced within the Kubernetes cluster using Network Policies, implemented via eBPF (Cilium) directly in the Linux kernel on each node.
+    *   **Kubernetes-Native:** Policies are defined using the `networking.k8s.io/v1/NetworkPolicy` API.
+    *   **Label-Based:** Rules primarily use Kubernetes labels and selectors to identify source and destination Pods and Namespaces.
+    *   **eBPF Advantages:** High performance, no `iptables` overhead, native support for features like FQDN-based egress, and rich Network Policy Logging.
 
 ### 2. Reverse-Engineering AWS Security Groups
 
-Before writing GKE policies, you must extract the intent from AWS rules.
+To translate rules, you need to understand the *intent* behind the AWS SG configuration:
 
-| AWS SG Component | Information Needed for GKE |
-| :--- | :--- |
-| **Inbound/Outbound Rules** | Port, Protocol, and Source/Destination. |
-| **Referenced SG-ID** | What workloads (pods) does that SG-ID represent? (Find their K8s labels). |
-| **CIDR Blocks** | Are these external IPs, other VPC subnets, or on-premises ranges? |
-| **SecurityGroupPolicy CRD** | Which pods are these rules actually applied to? (Check the `podSelector`). |
+1.  **Identify Scope:** Determine if SGs are applied at the Node level or to specific Pods via "Security Groups for Pods" and the `SecurityGroupPolicy` CRD.
+2.  **Analyze Rules:** For each relevant SG:
+    *   **Direction:** Inbound or Outbound.
+    *   **Protocol/Port:** e.g., TCP 8080.
+    *   **Source/Destination:** This is the crucial part.
+        *   **CIDR Blocks:** Identify what these represent (e.g., External IPs, other VPC Subnets, On-premises, Node IPs).
+        *   **Referenced SG IDs:** Determine which *Kubernetes workloads* (Pods, Deployments) are effectively part of the referenced SG. This requires mapping the SG ID back to Pods, likely through instance tags or `SecurityGroupPolicy` selectors. **The key is to find the corresponding Kubernetes labels.**
+3.  **SecurityGroupPolicy CRD:** If used, inspect the `podSelector` and `namespaceSelector` within the `SecurityGroupPolicy` manifest to see which specific Pods the SG rules were intended to target.
+
+| AWS SG Component          | Information Needed for GKE NetworkPolicy                                 |
+| :------------------------ | :----------------------------------------------------------------------- |
+| Inbound/Outbound Rules    | Port, Protocol, Source/Destination intent.                               |
+| Referenced SG-ID (Source/Dest) | The Kubernetes labels/namespaces of Pods associated with that SG-ID.     |
+| CIDR Blocks (Source/Dest) | The nature of the network range (External, Internal VPC, On-prem, etc.). |
+| `SecurityGroupPolicy` CRD | The `podSelector` and `namespaceSelector` defining the target Pods.      |
 
 ### 3. Mapping Rules to Kubernetes NetworkPolicy
 
-Translate the extracted intent into a `networking.k8s.io/v1` `NetworkPolicy`.
+Translate the intent into `networking.k8s.io/v1/NetworkPolicy` YAML:
 
-| AWS SG Rule | GKE NetworkPolicy Implementation |
-| :--- | :--- |
-| **Allow from another SG** | Use `podSelector` (and `namespaceSelector` if cross-namespace) matching the pods in that SG. |
-| **Allow from CIDR** | Use `ipBlock`. *Warning: Dataplane V2 `ipBlock` excludes pod traffic by default.* |
-| **Default Egress (Allow All)** | Do not define `Egress` rules, or explicitly allow all if the default is changed to deny. |
-| **Stateful Nature** | NetworkPolicies are also stateful (return traffic is automatically allowed). |
+| AWS SG Rule Intent              | GKE NetworkPolicy Implementation                                                                                                                                                                                                                                                                                         |
+| :------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Allow from/to another SG        | Use `podSelector` (and potentially `namespaceSelector` if cross-namespace) in the `from` (ingress) or `to` (egress) clauses, matching the labels of the Pods formerly grouped by the SG ID.                                                                                                                              |
+| Allow from/to a CIDR          | Use `ipBlock` in the `from` or `to` clauses. **CRITICAL:** In GKE Dataplane V2, `ipBlock` rules do *not* apply to Pod-to-Pod traffic within the cluster. They only apply to traffic external to the cluster (e.g., Internet, VMs outside GKE, On-prem). To allow/deny Pod traffic, you MUST use `podSelector`/`namespaceSelector`. |
+| Default Egress (Allow All)    | By default, Kubernetes Network Policies are allow-all until a policy selects a pod. If no Egress policy is defined for a selected pod, all egress is denied. To replicate "Allow All" egress, you need an explicit egress rule.                                                                                              |
+| Stateful Nature                 | Kubernetes NetworkPolicies are also stateful. If an ingress connection is allowed, the return traffic for that connection is automatically permitted, no separate egress rule for the response is needed.                                                                                                              |
 
-### 4. Implementation Example: The "Three-Tier" Migration
-
-**Scenario:** An EKS "App" pod only allows traffic from "Web" pods on port 8080 and allows all egress to a "DB" SG.
-
-#### AWS EKS Configuration (Intent)
-*   **Target:** Pods with `role: app`
-*   **Ingress:** Allow TCP 8080 from pods with `role: web`
-*   **Egress:** Allow all to pods with `role: db`
-
-#### GKE Dataplane V2 Configuration (Implementation)
+**Explicit Egress Example (Allow All):**
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: app-isolation-policy
-  namespace: default
-spec:
-  podSelector:
-    matchLabels:
-      role: app
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          role: web
-    ports:
-    - protocol: TCP
-      port: 8080
   egress:
   - to:
-    - podSelector:
-        matchLabels:
-          role: db
-```
-
-### 5. Advanced GKE Security Features (eBPF Advantages)
-
-*   **FQDN-based Egress:** Unlike AWS SGs which usually require IP ranges for external services, GKE Dataplane V2 allows you to restrict egress by domain name (e.g., `*.google.com`).
-*   **Network Policy Logging:** Dataplane V2 provides a built-in `NetworkLogging` object to audit every "Allow" or "Deny" action in Cloud Logging.
-*   **Metadata Server Protection:** Always include a rule to allow access to `169.254.169.254` on ports `80`/`8080` if using Workload Identity.
-
-### 6. Validation & Migration Workflow
-
-1.  **Extract:** Export AWS SG rules and `SecurityGroupPolicy` manifests.
-2.  **Label:** Ensure GKE pods have labels that represent their former EKS Security Group membership.
-3.  **Translate:** Use the logic above to create `NetworkPolicy` YAMLs.
-4.  **Dry-Run:** Apply policies and monitor `anetd` logs in Cloud Logging.
-5.  **Enforce:** Verify that unauthorized traffic is dropped by testing with `kubectl run --labels=unauthorized-label`.
+    - ipBlock:
+        cidr: 0.0.0.0/0
+      # Note: This allows all NON-POD traffic.
+      # To also allow all pod traffic, add selectors:
+    - podSelector: {} # All pods in the same namespace
+    - namespaceSelector: {} # All pods in all namespaces
