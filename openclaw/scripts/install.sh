@@ -3,7 +3,7 @@ set -e
 
 # --- Configuration ---
 LOCAL_BIN="$HOME/.local/bin"
-TARBALL_URL="https://github.com/dshnayder/gke-mcp/archive/refs/heads/main.tar.gz"
+TARBALL_URL="${TARBALL_URL:-https://github.com/GoogleCloudPlatform/gke-mcp/archive/refs/heads/main.tar.gz}"
 
 # --- Pre-flight Checks ---
 if ! command -v openclaw >/dev/null 2>&1; then
@@ -197,6 +197,21 @@ if [ ${#AGENTS[@]} -gt 0 ]; then
 else
   echo "No agents to configure for semantic routing."
 fi
+
+# --- Phase 5: Execute Post-Install Scripts ---
+echo "--- Phase 5: Executing Post-Install Scripts ---"
+for AGENT_NAME in "${AGENTS[@]}"; do
+  POSTINSTALL_SCRIPT="$HOME/.openclaw/workspace/agents/$AGENT_NAME/postinstall.sh"
+  if [ -f "$POSTINSTALL_SCRIPT" ] && [ -x "$POSTINSTALL_SCRIPT" ]; then
+    echo "[gke-agent] Running postinstall script for $AGENT_NAME..."
+    "$POSTINSTALL_SCRIPT"
+  elif [ -f "$POSTINSTALL_SCRIPT" ]; then
+     echo "[gke-agent] Running postinstall script for $AGENT_NAME (via bash)..."
+     bash "$POSTINSTALL_SCRIPT"
+  else
+    echo "[gke-agent] No postinstall script found for $AGENT_NAME. Skipping."
+  fi
+done
 
 # Cleanup
 rm -rf "$TMP_DIR"
