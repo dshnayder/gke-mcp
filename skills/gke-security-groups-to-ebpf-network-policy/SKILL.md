@@ -1,5 +1,7 @@
+---
 name: gke-security-groups-to-ebpf-network-policy
 description: Guides the translation of AWS EKS Security Groups (infrastructure-level) to GKE Dataplane V2 eBPF Network Policies (Kubernetes-native). This skill focuses on the "reverse-engineering" of AWS SG rules and their conversion into efficient, label-based K8s NetworkPolicy manifests. Use this skill when migrating security perimeters from EKS to GKE.
+---
 
 # EKS Security Groups to GKE eBPF Network Policies
 

@@ -1,5 +1,7 @@
+---
 name: gke-irsa-to-workload-identity
 description: Guides the migration of workload authentication from AWS EKS IRSA (IAM Roles for Service Accounts) to GKE Workload Identity. This skill assists in auditing EKS trust policies, creating GKE IAM bindings, and updating application SDKs to use Google Application Default Credentials (ADC). Use this skill when migrating identity perimeters and service-to-service authentication from EKS to GKE.
+---
 
 # EKS IRSA to GKE Workload Identity Migration
 

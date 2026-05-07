@@ -1,5 +1,7 @@
+---
 name: gke-vpc-cni-to-dpv2
 description: Assists in migrating Kubernetes pod networking architectures from AWS EKS (VPC CNI) to GKE Dataplane V2. This skill guides the mapping of EKS IP allocation strategies (VPC-based) to GKE's VPC-native secondary ranges, ensuring routability, security, and integration with peered networks. Use this skill when a user asks about EKS-to-GKE networking migration, IP address planning, or configuring Dataplane V2.
+---
 
 # EKS to GKE Pod Networking Migration
 
